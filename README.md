@@ -35,10 +35,10 @@ Proyek ini menggunakan 6 tabel utama yang saling berelasi untuk melacak data pen
 
 ## 🛠️ Pembahasan Studi Kasus SQL
 
+```SQL
 ### 📌 Kasus 1: Laporan Total Sales per Bulan (Tahun 2024)
 * **Pertanyaan:** Buatkan Laporan total sales per bulan untuk tahun 2024, berdasarkan tabel `transaction_detail`.
 * **Syntax SQL:**
-```sql
 SELECT
   FORMAT_DATE('%B', transaction_date) AS month_name,
   SUM(total_paid) AS total_sales
