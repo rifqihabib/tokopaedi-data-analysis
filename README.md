@@ -38,79 +38,115 @@ Proyek ini menggunakan 6 tabel utama yang saling berelasi untuk melacak data pen
 ### 📌 Kasus 1: Laporan Total Sales per Bulan (Tahun 2024)
 * **Pertanyaan:** Buatkan Laporan total sales per bulan untuk tahun 2024, berdasarkan tabel `transaction_detail`.
 * **Syntax SQL:**
-> SELECT
->   FORMAT_DATE('%B', transaction_date) AS month_name,
->   SUM(total_paid) AS total_sales
-> FROM
->   finpro_sql_myskill.transaction_detail
-> WHERE EXTRACT(year FROM transaction_date) = 2024
-> GROUP BY month_name
-> ORDER BY MIN(transaction_date) ASC;
+```sql
+SELECT
+  FORMAT_DATE('%B', transaction_date) AS month_name,
+  SUM(total_paid) AS total_sales
+FROM
+  finpro_sql_myskill.transaction_detail
+WHERE EXTRACT(year FROM transaction_date) = 2024
+GROUP BY month_name
+ORDER BY MIN(transaction_date) ASC;
 
 ---
 
 ### 📌 Kasus 2: Volume Penjualan per Kategori (2020 - 2024)
 * **Pertanyaan:** Tampilkan volume (quantity) terjual per kategori setiap tahun dari 2020 s.d. 2024.
 * **Syntax SQL:**
-> SELECT
->   EXTRACT(YEAR FROM od.order_date) AS year,
->   pd.category,
->   SUM(od.quantity) AS total_quantity_sold
-> FROM finpro_sql_myskill.order_detail od
-> JOIN finpro_sql_myskill.product_detail pd
->   ON od.sku_id = pd.sku_id
-> WHERE EXTRACT(YEAR FROM od.order_date) BETWEEN 2020 AND 2024
->   AND od.is_valid = 1
-> GROUP BY year, pd.category
-> ORDER BY year ASC, total_quantity_sold DESC;
+SELECT
+  EXTRACT(YEAR FROM od.order_date) AS year,
+  pd.category,
+  SUM(od.quantity) AS total_quantity_sold
+FROM finpro_sql_myskill.order_detail od
+JOIN finpro_sql_myskill.product_detail pd
+  ON od.sku_id = pd.sku_id
+WHERE EXTRACT(YEAR FROM od.order_date) BETWEEN 2020 AND 2024
+  AND od.is_valid = 1
+GROUP BY year, pd.category
+ORDER BY year ASC, total_quantity_sold DESC;
 
 ---
 
 ### 📌 Kasus 3: Performa Channel Penjualan (2024 vs 2023)
 * **Pertanyaan:** Analisis performa channel (Web, App, Offline) di 2024 berdasarkan total orders dan revenue per bulan vs 2023.
 * **Keterangan:** Kasus ini dianalisis secara komprehensif menggunakan perbandingan metrik performa channel penjualan langsung pada tabel multi-join untuk melihat pergeseran profitabilitas antara tahun 2023 dan 2024.
-
+* **Syntax SQL:**
+WITH monthly_metrics AS (
+  SELECT
+    EXTRACT(MONTH FROM order_date) AS month_num,
+    FORMAT_DATE('%B', order_date) AS month_name,
+    EXTRACT(YEAR FROM order_date) AS year,
+    CASE 
+      WHEN channel_type IN ('app store', 'play store') THEN 'App'
+      WHEN channel_type = 'web' THEN 'Web'
+      WHEN channel_type = 'offline' THEN 'Offline'
+      ELSE 'Other'
+    END AS channel,
+    COUNT(DISTINCT order_id) AS total_orders,
+    SUM(after_discount) AS revenue
+  FROM finpro_sql_myskill.order_detail
+  WHERE EXTRACT(YEAR FROM order_date) IN (2023, 2024)
+    AND is_valid = 1
+  GROUP BY month_num, month_name, year, channel
+),
+data_2023 AS (
+  SELECT month_num, month_name, channel, total_orders, revenue
+  FROM monthly_metrics WHERE year = 2023
+),
+data_2024 AS (
+  SELECT month_num, month_name, channel, total_orders, revenue
+  FROM monthly_metrics WHERE year = 2024
+)
+SELECT
+  curr.month_name,
+  curr.channel,
+  curr.total_orders AS total_orders_2024,
+  curr.revenue AS revenue_2024,
+  prev.revenue AS revenue_2023,
+  ROUND(SAFE_DIVIDE((curr.revenue - prev.revenue), prev.revenue) * 100, 2) AS yoy_growth_pct
+FROM data_2024 curr
+LEFT JOIN data_2023 prev
+  ON curr.month_num = prev.month_num AND curr.channel = prev.channel
+ORDER BY curr.month_num ASC, curr.channel ASC;
 ---
 
 ### 📌 Kasus 4: Kinerja Corong Pemasaran (Organic Funnel Event 2024)
 * **Pertanyaan:** Laporan Kinerja Funnel Event "Organic" Periode 1 Januari - 31 Desember 2024 berdasarkan total jumlah event organic, total unique order_id, dan conversion rate.
 * **Syntax SQL:**
-> SELECT
->   channel_source,
->   COUNT(*) AS total_events,
->   COUNT(DISTINCT order_id) AS total_orders,
->   ROUND(COUNT(DISTINCT order_id) / COUNT(*) * 100, 2) AS conversion_rate_pct
-> FROM finpro_sql_myskill.funnel_detail
-> WHERE event = 'Organic'
->   AND funnel_date BETWEEN '2024-01-01' AND '2025-01-01'
-> GROUP BY channel_source
-> ORDER BY channel_source;
-
+SELECT
+  channel_source,
+  COUNT(*) AS total_events,
+  COUNT(DISTINCT order_id) AS total_orders,
+  ROUND(COUNT(DISTINCT order_id) / COUNT(*) * 100, 2) AS conversion_rate_pct
+FROM finpro_sql_myskill.funnel_detail
+WHERE event = 'Organic'
+  AND funnel_date BETWEEN '2024-01-01' AND '2025-01-01'
+GROUP BY channel_source
+ORDER BY channel_source;
 ---
 
 ### 📌 Kasus 5: Analisis Kecepatan Onboarding Pelanggan Baru (2024)
 * **Pertanyaan:** Laporan Registrasi & Rata-rata Waktu ke Pembelian Pertama Pelanggan Baru di Tahun 2024.
 * **Syntax SQL:**
-> WITH first_order AS (
->   SELECT customer_id,
->     MIN(DATE(order_date)) AS first_order_date
->   FROM finpro_sql_myskill.order_detail
->   WHERE is_valid = 1
->     AND is_net = 1
->   GROUP BY customer_id
-> )
-> SELECT 
->   FORMAT_DATE('%B', DATE(c.registration_date)) AS bulan,
->   c.registration_channel,
->   COUNT(DISTINCT c.customer_id) AS total_customer,
->   ROUND(AVG(DATE_DIFF(f.first_order_date, DATE(c.registration_date), DAY)), 1) AS avg_days_to_buy
-> FROM finpro_sql_myskill.customer_detail c
-> JOIN first_order f
->   ON c.customer_id = f.customer_id
-> WHERE EXTRACT(year FROM DATE(c.registration_date)) = 2024
-> GROUP BY EXTRACT(MONTH FROM DATE(c.registration_date)), bulan, c.registration_channel
-> ORDER BY EXTRACT(MONTH FROM DATE(c.registration_date)) ASC;
-
+WITH first_order AS (
+  SELECT customer_id,
+    MIN(DATE(order_date)) AS first_order_date
+  FROM finpro_sql_myskill.order_detail
+  WHERE is_valid = 1
+    AND is_net = 1
+  GROUP BY customer_id
+)
+SELECT 
+  FORMAT_DATE('%B', DATE(c.registration_date)) AS bulan,
+  c.registration_channel,
+  COUNT(DISTINCT c.customer_id) AS total_customer,
+  ROUND(AVG(DATE_DIFF(f.first_order_date, DATE(c.registration_date), DAY)), 1) AS avg_days_to_buy
+FROM finpro_sql_myskill.customer_detail c
+JOIN first_order f
+  ON c.customer_id = f.customer_id
+WHERE EXTRACT(year FROM DATE(c.registration_date)) = 2024
+GROUP BY EXTRACT(MONTH FROM DATE(c.registration_date)), bulan, c.registration_channel
+ORDER BY EXTRACT(MONTH FROM DATE(c.registration_date)) ASC;
 ---
 
 ## 💡 Rekomendasi Strategis Bisnis
